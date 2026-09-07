@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Red Bull Asset Condition Report</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-title" content="Asset Report">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#CE0E2D">
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{--red:#CE0E2D;--dark:#161616;--gray:#555;--light:#f4f4f6;--border:#ddd;
+      --ok:#1c8a3d;--bad:#c62828;--mid:#e65c00;--radius:12px;
+      --font:'Segoe UI','Helvetica Neue',Arial,sans-serif}
+body{font-family:var(--font);background:#f0f0f2;color:var(--dark);min-height:100vh;overscroll-behavior:none}
+
+/* ---- SCREEN SWITCHING ----
+   Never put `display` on the ID rule: #id (1,0,0) beats .screen (0,1,0)
+   and the screen can never hide. Scope flex to .active instead. */
+.screen{display:none}
+.screen.active{display:block}
+#auth-screen,#mode-screen,#load-screen{background:var(--red);min-height:100vh;
+  flex-direction:column;align-items:center;justify-content:center;padding:24px}
+#share-screen{background:var(--ok);min-height:100vh;
+  flex-direction:column;align-items:center;justify-content:center;padding:24px}
+#auth-screen.active,#mode-screen.active,#load-screen.active,#share-screen.active{display:flex}
+
+.app{max-width:520px;margin:0 auto;background:#fff;min-height:100vh;padding-bottom:88px}
+
+/* ---- HEADER ---- */
+.hdr{background:var(--red);color:#fff;padding:14px 16px 12px;position:sticky;top:0;z-index:100}
+.hdr-row{display:flex;align-items:center;gap:10px}
+.hdr-logo{background:#fff;color:var(--red);font-weight:900;font-size:13px;padding:3px 7px;border-radius:4px;letter-spacing:.5px}
+.hdr-title{font-size:15px;font-weight:700;line-height:1.2}
+.hdr-sub{font-size:11px;opacity:.85;margin-top:1px}
+.hdr-phase{margin-left:auto;background:rgba(255,255,255,.2);font-size:11px;font-weight:700;
+  padding:3px 8px;border-radius:20px;letter-spacing:.5px}
+
+/* ---- BRAND BLOCK (auth / mode) ---- */
+.brand{color:#fff;text-align:center;margin-bottom:28px}
+.brand .rb{font-size:52px;font-weight:900;letter-spacing:-2px;line-height:1}
+.brand .sub{font-size:13px;opacity:.85;letter-spacing:2px;margin-top:4px}
+
+.mode-card{background:#fff;border-radius:16px;padding:20px;margin-bottom:12px;width:100%;
+  max-width:360px;cursor:pointer;border:2px solid transparent;transition:transform .12s,border-color .15s}
+.mode-card:active{border-color:var(--dark);transform:scale(.98)}
+.mode-card-icon{font-size:30px;margin-bottom:6px}
+.mode-card-title{font-size:17px;font-weight:800;margin-bottom:4px}
+.mode-card-desc{font-size:13px;color:var(--gray);line-height:1.45}
+
+/* ---- SECTIONS / FIELDS ---- */
+.section{padding:16px}
+.section-title{font-size:17px;font-weight:800;margin-bottom:4px}
+.section-sub{font-size:13px;color:var(--gray);margin-bottom:14px;line-height:1.45}
+.field-group{margin-bottom:12px}
+.field-group label{display:block;font-size:11px;font-weight:700;color:var(--gray);
+  text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.field-group input,.field-group textarea{width:100%;border:1.5px solid var(--border);
+  border-radius:8px;padding:10px 11px;font-size:16px;font-family:inherit;color:var(--dark);background:#fff}
+.field-group input:focus,.field-group textarea:focus{outline:none;border-color:var(--red)}
+.readonly-label{font-size:11px;font-weight:700;color:var(--gray);text-transform:uppercase;
+  letter-spacing:.5px;display:block;margin-bottom:4px}
+.readonly-field{background:var(--light);border:1.5px solid var(--border);border-radius:8px;
+  padding:9px 11px;font-size:14px;color:var(--dark);min-height:38px;word-break:break-word}
+.readonly-group{margin-bottom:10px}
+
+/* ---- ASSET PICKER ---- */
+.asset-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.asset-btn{background:#fff;border:2px solid var(--border);border-radius:14px;padding:16px 10px;
+  font-family:inherit;font-size:13px;font-weight:700;color:var(--dark);cursor:pointer;text-align:center}
+.asset-btn .ico{display:block;font-size:26px;margin-bottom:6px}
+.asset-btn.selected{border-color:var(--red);background:#fff5f6;color:var(--red)}
+
+/* ---- CARDS ---- */
+.card{border:1px solid var(--border);border-radius:var(--radius);margin:0 16px 16px;overflow:hidden}
+.card-hdr{background:var(--dark);color:#fff;padding:11px 14px;font-size:14px;font-weight:800;
+  display:flex;align-items:center;gap:8px}
+.card-body{padding:14px}
+.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
+.block-title{font-size:12px;font-weight:700;text-transform:uppercase;color:var(--gray);
+  letter-spacing:.5px;margin-bottom:8px}
+
+/* ---- CHECKLIST ---- */
+.cl-section-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;
+  color:#fff;background:#37373e;padding:5px 9px;border-radius:5px;margin:14px 0 6px}
+.cl-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f0f0f0}
+.cl-label{flex:1;font-size:13px;color:var(--dark)}
+.cl-btns{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.cl-btn{min-width:44px;padding:6px 9px;border-radius:6px;border:1.5px solid var(--border);
+  background:#fff;font-size:12px;font-weight:700;cursor:pointer;color:var(--gray);
+  font-family:inherit;transition:all .1s}
+.cl-btn.active-ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.cl-btn.active-x{background:var(--bad);border-color:var(--bad);color:#fff}
+.cl-btn.active-mid{background:var(--mid);border-color:var(--mid);color:#fff}
+
+/* manager verify rows */
+.mgr-cl-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f0f0f0;flex-wrap:wrap}
+.mgr-cl-label{flex:1 1 100%;font-size:13px;font-weight:600;color:var(--dark)}
+.mgr-cl-right{display:flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+.tag{display:inline-block;background:var(--light);border-radius:4px;padding:2px 7px;font-size:11px;
+  font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.5px}
+.tag-ok{background:#e8f5e9;color:var(--ok)}
+.tag-x{background:#fdecea;color:var(--bad)}
+.tag-mid{background:#fff3e0;color:var(--mid)}
+.striker-lbl{font-size:10px;color:var(--gray)}
+
+/* ---- PHOTOS ---- */
+.photo-add-btn{display:block;text-align:center;border:2px dashed var(--border);border-radius:10px;
+  padding:14px;font-size:14px;font-weight:700;color:var(--gray);cursor:pointer;margin-bottom:10px}
+.hidden-input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.photo-thumb{position:relative;border-radius:8px;overflow:hidden;border:1.5px solid var(--border);
+  aspect-ratio:1;background:var(--light)}
+.photo-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.photo-del{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.65);color:#fff;border:none;
+  border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer}
+
+/* ---- CANVAS ---- */
+.sig-block{margin-top:10px}
+.sig-label{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.sig-label span{font-size:11px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.5px}
+.sig-clear{background:none;border:none;color:var(--red);font-size:12px;font-weight:700;
+  cursor:pointer;font-family:inherit}
+.sig-wrap{position:relative;border:1.5px solid var(--border);border-radius:8px;background:#fff;overflow:hidden}
+.sig-canvas{display:block;width:100%;height:130px;touch-action:none}
+.sig-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:#bbb;font-size:13px;pointer-events:none}
+.sig-wrap.inked .sig-placeholder{display:none}
+.diagram-block{margin-bottom:12px}
+.diagram-title{font-size:11px;font-weight:700;color:var(--gray);text-transform:uppercase;
+  letter-spacing:.5px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+.diag-canvas{display:block;width:100%;height:190px;touch-action:none;border:1.5px solid var(--border);
+  border-radius:8px;background:#fafafa}
+.diag-img{width:100%;border:1.5px solid var(--border);border-radius:8px;display:block}
+
+/* ---- BUTTONS / BARS ---- */
+.bottom-bar{position:fixed;bottom:0;left:0;right:0;max-width:520px;margin:0 auto;background:#fff;
+  border-top:1px solid var(--border);padding:10px 16px;display:flex;gap:10px;z-index:90}
+.btn{flex:1;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:800;
+  cursor:pointer;font-family:inherit}
+.btn:disabled{opacity:.55;cursor:default}
+.btn-primary{background:var(--red);color:#fff}
+.btn-success{background:var(--ok);color:#fff}
+.btn-secondary{background:var(--light);color:var(--dark);border:1.5px solid var(--border)}
+.btn-full{width:100%;flex:none}
+
+/* ---- BANNERS ---- */
+.banner{display:none;margin:0 16px 12px;padding:11px 13px;border-radius:9px;font-size:13px;line-height:1.45}
+.banner.show{display:block}
+.banner-error{background:#fdecea;border:1px solid #f5b5ae;color:#8c1d13}
+.banner-ok{background:#e8f5e9;border:1px solid #a5d6a7;color:#1a5e20}
+
+/* ---- LOAD / SHARE ---- */
+.load-spinner{width:40px;height:40px;border:4px solid rgba(255,255,255,.3);border-top-color:#fff;
+  border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load-msg{color:#fff;font-size:17px;font-weight:800;text-align:center}
+.load-sub{color:rgba(255,255,255,.75);font-size:13px;text-align:center;margin-top:6px;max-width:320px;line-height:1.5}
+.load-actions{margin-top:20px}
+
+.share-inner{background:#fff;border-radius:16px;padding:28px 20px;width:100%;max-width:360px;text-align:center}
+.share-check{font-size:46px;margin-bottom:10px}
+.share-title{font-size:22px;font-weight:800;margin-bottom:6px}
+.share-desc{font-size:13px;color:var(--gray);margin-bottom:18px;line-height:1.5}
+.share-link-row{display:flex;gap:8px;margin-bottom:14px}
+.share-link-input{flex:1;min-width:0;border:1.5px solid var(--border);border-radius:8px;
+  padding:9px 10px;font-size:11px;color:var(--dark);background:var(--light);font-family:inherit}
+.share-copy-btn{background:var(--dark);color:#fff;border:none;border-radius:8px;padding:9px 14px;
+  font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:inherit}
+.share-wa-btn{background:#25D366;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;
+  font-weight:800;cursor:pointer;width:100%;margin-bottom:10px;font-family:inherit}
+.share-new-btn{background:var(--light);color:var(--dark);border:1.5px solid var(--border);
+  border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;width:100%;font-family:inherit}
+
+/* ---- AUTH ---- */
+.auth-card{background:#fff;border-radius:16px;padding:26px 22px;width:100%;max-width:360px;text-align:center}
+.auth-title{font-size:19px;font-weight:800;margin-bottom:6px}
+.auth-desc{font-size:13px;color:var(--gray);line-height:1.5;margin-bottom:18px}
+.auth-err{background:#fdecea;border:1px solid #f5b5ae;color:#8c1d13;border-radius:8px;padding:10px;
+  font-size:12px;margin-bottom:14px;text-align:left;line-height:1.5;word-break:break-word}
+.config-warn{position:fixed;top:0;left:0;right:0;background:#8c1d13;color:#fff;font-size:12px;
+  padding:8px 12px;z-index:300;text-align:center;line-height:1.4}
+</style>
+</head>
+<body>
+
+<!-- ============ MODE ============ -->
+<div id="mode-screen" class="screen active">
+  <div class="config-warn" id="config-warn" style="display:none"></div>
+  <div class="brand"><div class="rb">RB</div><div class="sub">ASSET CONDITION REPORT</div></div>
+  <div class="mode-card" onclick="startStriker()">
+    <div class="mode-card-icon">📋</div>
+    <div class="mode-card-title">I'm the Striker</div>
+    <div class="mode-card-desc">Check your assets, add photos, sign, and send a link to your manager</div>
+  </div>
+  <div class="mode-card" onclick="startManager()">
+    <div class="mode-card-icon">✅</div>
+    <div class="mode-card-title">I'm the Manager</div>
+    <div class="mode-card-desc">Open the link your striker sent you — it loads their report automatically</div>
+  </div>
+</div>
+
+<!-- ============ STRIKER — ASSET SELECT ============ -->
+<div id="striker-select-screen" class="screen">
+  <div class="app">
+    <div class="hdr"><div class="hdr-row">
+      <div class="hdr-logo">RB</div>
+      <div><div class="hdr-title">Asset Condition Report</div><div class="hdr-sub">Red Bull South Africa</div></div>
+      <div class="hdr-phase">STRIKER</div>
+    </div></div>
+    <div class="section">
+      <div class="section-title">Select Assets to Check</div>
+      <div class="section-sub">Tap each asset you're completing a condition check for today.</div>
+      <div class="asset-grid" id="asset-grid"></div>
+    </div>
+    <div class="banner banner-error" id="select-banner"></div>
+    <div class="bottom-bar">
+      <button class="btn btn-secondary" onclick="showScreen('mode-screen')">← Back</button>
+      <button class="btn btn-primary" onclick="continueToForms()">Continue →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ STRIKER — FORMS ============ -->
+<div id="striker-form-screen" class="screen">
+  <div class="app">
+    <div class="hdr"><div class="hdr-row">
+      <div class="hdr-logo">RB</div>
+      <div><div class="hdr-title" style="font-size:13px">Asset Condition Report</div></div>
+      <div class="hdr-phase">STRIKER</div>
+    </div></div>
+    <div id="striker-forms-container"></div>
+    <div class="banner banner-error" id="form-banner"></div>
+    <div class="bottom-bar">
+      <button class="btn btn-secondary" onclick="showScreen('striker-select-screen')">← Back</button>
+      <button class="btn btn-primary" id="submit-btn" onclick="submitStriker()">Send to Manager →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ LOADING ============ -->
+<div id="load-screen" class="screen">
+  <div class="load-spinner" id="load-spinner"></div>
+  <div class="load-msg" id="load-msg">Loading report…</div>
+  <div class="load-sub" id="load-sub">Please wait</div>
+  <div class="load-actions" id="load-actions"></div>
+</div>
+
+<!-- ============ SHARE ============ -->
+<div id="share-screen" class="screen">
+  <div class="share-inner">
+    <div class="share-check">✅</div>
+    <div class="share-title">Report Saved</div>
+    <div class="share-desc">Send this link to your manager. They tap it, verify, sign, and download the PDF.</div>
+    <div class="share-link-row">
+      <input type="text" id="share-link-input" class="share-link-input" readonly onclick="this.select()">
+      <button class="share-copy-btn" onclick="copyShareLink()">Copy</button>
+    </div>
+    <button class="share-wa-btn" onclick="shareViaWhatsApp()">Share via WhatsApp</button>
+    <button class="share-new-btn" onclick="startNewReport()">Start New Report</button>
+  </div>
+</div>
+
+<!-- ============ MANAGER — VERIFY ============ -->
+<div id="manager-verify-screen" class="screen">
+  <div class="app">
+    <div class="hdr"><div class="hdr-row">
+      <div class="hdr-logo">RB</div>
+      <div><div class="hdr-title" style="font-size:13px">Verify &amp; Sign Off</div></div>
+      <div class="hdr-phase">MANAGER</div>
+    </div></div>
+    <div id="manager-verify-container"></div>
+    <div class="banner banner-error" id="mgr-banner"></div>
+    <div class="bottom-bar">
+      <button class="btn btn-secondary" onclick="showScreen('mode-screen')">← Back</button>
+      <button class="btn btn-success" id="pdf-btn" onclick="downloadPDF()">Download PDF</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ==========================================================================
+   CONFIG — paste these two values from Supabase.
+   Dashboard → your project → Settings → API
+   The anon key is public by design; it identifies the project and grants
+   nothing on its own. Row Level Security is what authorises. See SETUP-SUPABASE.md
+   ========================================================================== */
+const CONFIG = {
+  supabaseUrl:     'https://kydadxlqyiswqljhoobk.supabase.co',
+  supabaseAnonKey: 'sb_publishable_NSixy3qIu1-8csxnuExDZw_jPDBiJOV'
+};
+
+/* ==========================================================================
+   VEHICLE DIAGRAM OUTLINES (inline SVG → data URI)
+   Replace with the Smollan artwork if you have it; these are stand-ins.
+   ========================================================================== */
+function svgURI(inner, w, h) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
+    + `<rect width="${w}" height="${h}" fill="#fafafa"/>`
+    + `<g fill="none" stroke="#9a9aa2" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">`
+    + inner + `</g></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+const VEH_IMG = {
+  front: svgURI(`
+    <path d="M70 200 L70 150 Q70 120 95 112 L120 60 Q126 45 145 45 L255 45 Q274 45 280 60 L305 112 Q330 120 330 150 L330 200 Z"/>
+    <path d="M128 110 L148 62 Q151 55 160 55 L240 55 Q249 55 252 62 L272 110 Z"/>
+    <rect x="150" y="130" width="100" height="34" rx="5"/>
+    <rect x="88" y="132" width="46" height="24" rx="7"/>
+    <rect x="266" y="132" width="46" height="24" rx="7"/>
+    <path d="M70 178 L330 178"/>
+    <path d="M62 200 L62 214 Q62 220 70 220 L92 220 Q100 220 100 214 L100 200"/>
+    <path d="M300 200 L300 214 Q300 220 308 220 L330 220 Q338 220 338 214 L338 200"/>
+  `, 400, 250),
+
+  rear: svgURI(`
+    <path d="M70 200 L70 150 Q70 122 94 114 L112 58 Q118 44 136 44 L264 44 Q282 44 288 58 L306 114 Q330 122 330 150 L330 200 Z"/>
+    <path d="M120 112 L136 60 Q139 54 147 54 L253 54 Q261 54 264 60 L280 112 Z"/>
+    <rect x="86" y="132" width="52" height="26" rx="6"/>
+    <rect x="262" y="132" width="52" height="26" rx="6"/>
+    <path d="M70 176 L330 176"/>
+    <rect x="168" y="186" width="64" height="10" rx="4"/>
+    <path d="M62 200 L62 214 Q62 220 70 220 L92 220 Q100 220 100 214 L100 200"/>
+    <path d="M300 200 L300 214 Q300 220 308 220 L330 220 Q338 220 338 214 L338 200"/>
+  `, 400, 250),
+
+  top: svgURI(`
+    <rect x="96" y="26" width="208" height="198" rx="42"/>
+    <path d="M120 84 Q200 70 280 84 L272 116 Q200 106 128 116 Z"/>
+    <path d="M128 150 Q200 140 272 150 L280 182 Q200 168 120 182 Z"/>
+    <rect x="132" y="120" width="136" height="26" rx="8"/>
+    <path d="M96 96 L78 90 M304 96 L322 90"/>
+    <path d="M96 60 L304 60 M96 196 L304 196"/>
+  `, 400, 250),
+
+  sideL: svgURI(`
+    <path d="M32 176 L32 148 Q32 134 48 130 L96 120 L140 74 Q148 64 164 64 L268 64 Q284 64 292 74 L322 118 L352 128 Q368 133 368 150 L368 176 Z"/>
+    <path d="M112 116 L150 80 Q155 74 165 74 L198 74 L198 116 Z"/>
+    <path d="M210 74 L262 74 Q272 74 278 82 L304 116 L210 116 Z"/>
+    <circle cx="112" cy="176" r="30"/><circle cx="112" cy="176" r="13"/>
+    <circle cx="292" cy="176" r="30"/><circle cx="292" cy="176" r="13"/>
+    <path d="M32 162 L82 162 M322 162 L368 162"/>
+    <path d="M202 64 L202 120"/>
+  `, 400, 250),
+
+  sideR: svgURI(`
+    <path d="M368 176 L368 148 Q368 134 352 130 L304 120 L260 74 Q252 64 236 64 L132 64 Q116 64 108 74 L78 118 L48 128 Q32 133 32 150 L32 176 Z"/>
+    <path d="M288 116 L250 80 Q245 74 235 74 L202 74 L202 116 Z"/>
+    <path d="M190 74 L138 74 Q128 74 122 82 L96 116 L190 116 Z"/>
+    <circle cx="288" cy="176" r="30"/><circle cx="288" cy="176" r="13"/>
+    <circle cx="108" cy="176" r="30"/><circle cx="108" cy="176" r="13"/>
+    <path d="M368 162 L318 162 M78 162 L32 162"/>
+    <path d="M198 64 L198 120"/>
+  `, 400, 250)
+};
+
+const DIAG_LABELS = {front:'Front', rear:'Rear', top:'Top', sideL:'Left Side', sideR:'Right Side'};
+
+/* ==========================================================================
+   ASSET CONFIG — the single source of truth for every form and the PDF
+   opts[0] = good (green), opts[1] = bad (red), opts[2+] = intermediate (amber)
+   ========================================================================== */
+const ASSETS = {
+  phone: {
+    label:'Cell Phone', icon:'📱',
+    deviceFields:[
+      {id:'make_model',     label:'Make & Model',       placeholder:'e.g. Samsung Galaxy A36'},
+      {id:'imei',           label:'IMEI Number',        placeholder:'15-digit IMEI'},
+      {id:'cell_nr',        label:'Cell Number',        placeholder:'e.g. 0724729454'},
+      {id:'sim_password',   label:'SIM Password / PIN', placeholder:'e.g. 1234'},
+      {id:'phone_password', label:'Phone Password',     placeholder:'e.g. 1234 or Ab12cd'}
+    ],
+    checklist:[
+      {id:'cover',    label:'Cover',          opts:['✓','X']},
+      {id:'screen_f', label:'Screen – Front', opts:['✓','Scratched','Cracked']},
+      {id:'screen_b', label:'Screen – Back',  opts:['✓','Scratched','Cracked']},
+      {id:'keypad',   label:'Key Pad',        opts:['✓','X']},
+      {id:'battery',  label:'Battery',        opts:['Present','Not Present']},
+      {id:'charger',  label:'Charger',        opts:['Present','Not Present']},
+      {id:'software', label:'Software',       opts:['Updated','Not updated']}
+    ],
+    diagrams:null
+  },
+
+  router: {
+    label:'Router', icon:'📡',
+    deviceFields:[
+      {id:'make_model', label:'Make & Model',     placeholder:'e.g. Vodafone R2192'},
+      {id:'imei',       label:'IMEI / Serial No', placeholder:''}
+    ],
+    checklist:[
+      {id:'front_cond',   label:'Front Appearance',              opts:['Good','Fair','Poor']},
+      {id:'back_cond',    label:'Back Appearance',               opts:['Good','Fair','Poor']},
+      {id:'charger_rcvd', label:'Charger cable received',        opts:['Yes','No']},
+      {id:'working',      label:'Router working / SIM active',   opts:['Yes','No','Not Working']},
+      {id:'sim_rcvd',     label:'Company router + SIM received', opts:['Yes','No']}
+    ],
+    diagrams:null
+  },
+
+  laptop: {
+    label:'Laptop', icon:'💻',
+    deviceFields:[
+      {id:'make',    label:'Make',            placeholder:'e.g. Dell'},
+      {id:'model',   label:'Model / NB No',   placeholder:'e.g. 7288-22'},
+      {id:'serial',  label:'Serial Number',   placeholder:''},
+      {id:'barcode', label:'Smollan Barcode', placeholder:''}
+    ],
+    checklist:[
+      {id:'keyboard', label:'Keyboard',  opts:['✓','X']},
+      {id:'software', label:'Software',  opts:['Loaded','Not Loaded']},
+      {id:'bag',      label:'Carry Bag', opts:['Present','Not Present']},
+      {id:'mouse',    label:'Mouse',     opts:['Present','Not Present']}
+    ],
+    diagrams:null
+  },
+
+  vehicle: {
+    label:'Vehicle', icon:'🚗',
+    deviceFields:[
+      {id:'reg',            label:'Registration No', placeholder:'e.g. LB29MVGP'},
+      {id:'make_model',     label:'Make & Model',    placeholder:'e.g. Toyota Hilux'},
+      {id:'odo',            label:'ODO Reading',     placeholder:'km'},
+      {id:'fuel',           label:'Fuel Level',      placeholder:'e.g. Full / ¾ / ½ / ¼'},
+      {id:'date_checked',   label:'Date Checked',                 type:'date'},
+      {id:'licence_expiry', label:"Driver's Licence Expiry Date", type:'date'}
+    ],
+    checklist:[
+      {section:'Glass & Lights'},
+      {id:'windscreen',  label:'Windscreen',       opts:['✓','Damaged']},
+      {id:'rear_glass',  label:'Rear Glass',       opts:['✓','Damaged']},
+      {id:'side_glass',  label:'Side Glass',       opts:['✓','Damaged']},
+      {id:'headlights',  label:'Head Lights',      opts:['✓','X']},
+      {id:'indicators',  label:'Indicator Lenses', opts:['✓','X']},
+      {id:'mirrors_ext', label:'Exterior mirrors', opts:['✓','X']},
+      {id:'hooter_op',   label:'Hooter Operation', opts:['✓','X']},
+
+      {section:'Tyres – Right'},
+      {id:'tyre_press_r', label:'Pressure',   opts:['✓','X']},
+      {id:'tyre_tread_r', label:'Tread',      opts:['Good','Bad']},
+      {id:'valve_r',      label:'Valve Cap',  opts:['Present','Missing']},
+      {id:'wheelnuts_r',  label:'Wheel Nuts', opts:['✓','X']},
+
+      {section:'Tyres – Left'},
+      {id:'tyre_press_l', label:'Pressure',   opts:['✓','X']},
+      {id:'tyre_tread_l', label:'Tread',      opts:['Good','Bad']},
+      {id:'valve_l',      label:'Valve Cap',  opts:['Present','Missing']},
+      {id:'wheelnuts_l',  label:'Wheel Nuts', opts:['✓','X']},
+
+      {section:'Interior'},
+      {id:'radio',        label:'Radio',            opts:['Working','Not Working']},
+      {id:'aircon',       label:'Air Con',          opts:['✓','X']},
+      {id:'alarm',        label:'Alarm',            opts:['✓','X']},
+      {id:'wipers',       label:'Wipers',           opts:['✓','X']},
+      {id:'floor_carpet', label:'Floor Carpet',     opts:['✓','Dirty','Damaged']},
+      {id:'seats',        label:'Seats',            opts:['✓','Torn','Dirty']},
+      {id:'dash',         label:'Dashboard',        opts:['✓','X']},
+      {id:'rear_mirror',  label:'Rear View Mirror', opts:['✓','Missing']},
+
+      {section:'Bodywork'},
+      {id:'bonnet',       label:'Bonnet',       opts:['✓','Damaged']},
+      {id:'door_handles', label:'Door Handles', opts:['✓','X']},
+      {id:'front_bumper', label:'Front Bumper', opts:['✓','Damaged']},
+      {id:'rear_bumper',  label:'Rear Bumper',  opts:['✓','Damaged']},
+      {id:'side_l',       label:'Side – Left',  opts:['✓','Damaged']},
+      {id:'side_r',       label:'Side – Right', opts:['✓','Damaged']},
+
+      {section:'Safety & Documentation'},
+      {id:'spare_tyre',   label:'Spare Tyre',           opts:['Present','Missing']},
+      {id:'jack',         label:'Jack',                 opts:['Present','Missing']},
+      {id:'tools',        label:'Tools',                opts:['Present','Missing']},
+      {id:'keys',         label:'Keys',                 opts:['Present','Missing']},
+      {id:'gen_safety',   label:'General Safety Equip', opts:['✓','X']},
+      {id:'overall_cond', label:'Overall Condition',    opts:['Good','Bad','Fair']}
+    ],
+    diagrams:['front','rear','top','sideL','sideR']
+  },
+
+  tablet: {
+    label:'Tablet', icon:'📟',
+    deviceFields:[
+      {id:'make_model', label:'Make & Model',     placeholder:'e.g. iPad Mini 6th Gen'},
+      {id:'imei',       label:'IMEI / Serial No', placeholder:''}
+    ],
+    checklist:[
+      {id:'screen',  label:'Screen',  opts:['✓','Scratched','Cracked']},
+      {id:'cover',   label:'Cover',   opts:['✓','Damaged']},
+      {id:'charger', label:'Charger', opts:['Present','Not Present']}
+    ],
+    diagrams:null
+  },
+
+  printer: {
+    label:'Printer', icon:'🖨️',
+    deviceFields:[
+      {id:'make_model', label:'Make & Model', placeholder:''},
+      {id:'serial',     label:'Serial No',    placeholder:''}
+    ],
+    checklist:[
+      {id:'power',     label:'Power Supply',      opts:['Present','Not Present']},
+      {id:'condition', label:'General Condition', opts:['Good','Fair','Poor']}
+    ],
+    diagrams:null
+  }
+};
+
+const ASSET_ORDER = ['phone','router','laptop','vehicle','tablet','printer'];
+
+/* ==========================================================================
+   STATE
+   ========================================================================== */
+let selectedAssets = [];
+let photoStore     = {};   // { assetKey: [dataURL, …] }
+let canvasMeta     = {};   // { canvasId: { ctx, hasInk, imgURL, w, h } }
+let reportData     = null;
+let currentReportId= null;
+let dbReady        = false;
+
+/* ==========================================================================
+   SUPABASE — the whole backend. One table, addressed by report id.
+   ========================================================================== */
+let db = null;
+
+function initDb(){
+  const unconfigured =
+    CONFIG.supabaseUrl.includes('YOUR_PROJECT_REF') ||
+    CONFIG.supabaseAnonKey.indexOf('YOUR_') === 0;
+  if (unconfigured) { configWarn('Not configured yet — paste your Supabase URL and anon key into CONFIG.'); return false; }
+  if (!window.supabase || !window.supabase.createClient) {
+    configWarn('Could not load the Supabase library. Check your internet connection.'); return false;
+  }
+  db = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey);
+  return true;
+}
+
+function configWarn(msg){
+  const el = document.getElementById('config-warn');
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+
+async function saveReport(data){
+  if (!db) throw new Error('Not connected to the database');
+  const { data: row, error } = await db
+    .from('asset_reports')
+    .insert({
+      striker_name: data.shared.name,
+      store:        data.shared.store,
+      status:       'pending',
+      report_data:  data
+    })
+    .select('id')
+    .single();
+  if (error) throw new Error(error.message || 'Insert failed');
+  return row.id;
+}
+
+// Read goes through a security-definer function, not a bare select, so that the
+// anon key cannot list every report — it can only fetch one by its exact id.
+async function fetchReport(id){
+  if (!db) throw new Error('Not connected to the database');
+  if (!/^[0-9a-fA-F-]{36}$/.test(id)) throw new Error('Malformed report id');
+  const { data, error } = await db.rpc('get_report', { report_id: id });
+  if (error) throw new Error(error.message || 'Lookup failed');
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('No report with that id');
+  return row.report_data;
+}
+
+
+/* ==========================================================================
+   SCREENS
+   ========================================================================== */
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) { el.classList.add('active'); window.scrollTo(0,0); }
+}
+
+function startStriker(){ buildAssetGrid(); showScreen('striker-select-screen'); }
+
+function startManager(){
+  alert('Open the link your striker sent you on WhatsApp or email — it loads their report automatically.');
+}
+
+function val(id){ const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+
+function showBanner(id, html, type){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = html;
+  el.className = 'banner show ' + (type === 'ok' ? 'banner-ok' : 'banner-error');
+}
+function hideBanner(id){
+  const el = document.getElementById(id);
+  if (el) el.className = 'banner';
+}
+function scrollToEl(id){
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+/* ==========================================================================
+   ASSET PICKER
+   ========================================================================== */
+function buildAssetGrid(){
+  const grid = document.getElementById('asset-grid');
+  grid.innerHTML = ASSET_ORDER.map(key => {
+    const a = ASSETS[key];
+    const sel = selectedAssets.includes(key) ? ' selected' : '';
+    return `<button type="button" class="asset-btn${sel}" data-key="${key}" onclick="toggleAsset('${key}')">
+              <span class="ico">${a.icon}</span>${a.label}
+            </button>`;
+  }).join('');
+}
+
+function toggleAsset(key){
+  const i = selectedAssets.indexOf(key);
+  if (i >= 0) selectedAssets.splice(i,1); else selectedAssets.push(key);
+  buildAssetGrid();
+}
+
+function continueToForms(){
+  if (!selectedAssets.length) {
+    showBanner('select-banner','Select at least one asset to continue.','error');
+    return;
+  }
+  hideBanner('select-banner');
+  photoStore = {}; canvasMeta = {};
+  buildStrikerForms();
+  showScreen('striker-form-screen');
+}
+
+/* ==========================================================================
+   STRIKER FORMS
+   ========================================================================== */
+function buildStrikerForms(){
+  const c = document.getElementById('striker-forms-container');
+  const today = new Date().toISOString().slice(0,10);
+
+  let html = `
+    <div class="section">
+      <div class="section-title">Your Details</div>
+      <div class="field-group"><label>Name &amp; Surname</label><input id="striker_name" type="text"></div>
+      <div class="field-group"><label>EE Number</label><input id="striker_ee" type="text"></div>
+      <div class="field-group"><label>Store / Area</label><input id="striker_store" type="text"></div>
+      <div class="field-group"><label>Manager Name</label><input id="striker_mgr_name" type="text"></div>
+      <div class="field-group"><label>Manager Cell</label><input id="striker_mgr_cell" type="tel"></div>
+      <div class="field-group"><label>Date</label><input id="striker_date" type="date" value="${today}"></div>
+    </div>`;
+  c.innerHTML = html;
+
+  // Order the cards by ASSET_ORDER, not selection order.
+  ASSET_ORDER.filter(k => selectedAssets.includes(k)).forEach(key => {
+    const asset = ASSETS[key];
+    photoStore[key] = photoStore[key] || [];
+
+    const fieldsHTML = asset.deviceFields.map(f => `
+      <div class="field-group"><label>${f.label}</label>
+        <input id="${key}_${f.id}" type="${f.type || 'text'}" placeholder="${f.placeholder || ''}">
+      </div>`).join('');
+
+    let clHTML = '';
+    asset.checklist.forEach(item => {
+      if (item.section) { clHTML += `<div class="cl-section-title">${item.section}</div>`; return; }
+      const btns = item.opts.map((opt,i) =>
+        `<button type="button" class="cl-btn" data-asset="${key}" data-item="${item.id}"
+                 data-idx="${i}" onclick="toggleCL(this)">${opt}</button>`).join('');
+      clHTML += `<div class="cl-row"><div class="cl-label">${item.label}</div>
+                 <div class="cl-btns">${btns}</div></div>`;
+    });
+
+    let diagHTML = '';
+    if (asset.diagrams) {
+      diagHTML = `<hr class="divider"><div class="block-title">Mark Damage on Diagrams</div>` +
+        asset.diagrams.map(view => `
+          <div class="diagram-block">
+            <div class="diagram-title"><span>${DIAG_LABELS[view] || view}</span>
+              <button type="button" class="sig-clear" onclick="clearCanvas('${key}_diag_${view}')">Clear</button>
+            </div>
+            <canvas id="${key}_diag_${view}" class="diag-canvas"></canvas>
+          </div>`).join('');
+    }
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-hdr"><span>${asset.icon}</span>${asset.label}</div>
+      <div class="card-body">
+        ${fieldsHTML}
+        <hr class="divider">
+        <div class="block-title">Condition Checklist</div>
+        ${clHTML}
+        <hr class="divider">
+        <div class="block-title">Photos (damage, condition)</div>
+        <label class="photo-add-btn">📷 Take or choose photo
+          <input type="file" accept="image/*" multiple class="hidden-input"
+                 data-asset-key="${key}" onchange="handlePhoto(this)">
+        </label>
+        <div class="photo-grid" id="${key}_photos"></div>
+        ${diagHTML}
+        <hr class="divider">
+        <div class="field-group"><label>Comments</label><textarea id="${key}_comments" rows="2"></textarea></div>
+        <div class="sig-block">
+          <div class="sig-label"><span>Your Signature</span>
+            <button type="button" class="sig-clear" onclick="clearCanvas('${key}_sig_striker')">Clear</button>
+          </div>
+          <div class="sig-wrap"><canvas id="${key}_sig_striker" class="sig-canvas"></canvas>
+            <div class="sig-placeholder">Sign here</div></div>
+        </div>
+      </div>`;
+    c.appendChild(card);
+  });
+
+  // Canvases must be sized only once visible — a hidden element has clientWidth 0.
+  requestAnimationFrame(() => {
+    ASSET_ORDER.filter(k => selectedAssets.includes(k)).forEach(key => {
+      initCanvas(document.getElementById(key + '_sig_striker'), '#111', 2.2);
+      const asset = ASSETS[key];
+      if (asset.diagrams) asset.diagrams.forEach(view =>
+        initCanvas(document.getElementById(key + '_diag_' + view), '#d40024', 3, VEH_IMG[view]));
+    });
+  });
+}
+
+function toggleCL(btn){
+  const asset = btn.dataset.asset, item = btn.dataset.item;
+  const isMgr = btn.dataset.mgr === '1';
+  // Scope to the same role, so a manager tick never clears the striker's answer.
+  document.querySelectorAll(`.cl-btn[data-asset="${asset}"][data-item="${item}"]`).forEach(s => {
+    if ((s.dataset.mgr === '1') === isMgr) s.classList.remove('active-ok','active-x','active-mid');
+  });
+  const idx = parseInt(btn.dataset.idx, 10);
+  btn.classList.add(idx === 0 ? 'active-ok' : idx === 1 ? 'active-x' : 'active-mid');
+}
+
+function getCLStatus(assetKey, itemId, mgr){
+  const sel = `.cl-btn[data-asset="${assetKey}"][data-item="${itemId}"]` +
+              (mgr ? '[data-mgr="1"]' : ':not([data-mgr])');
+  const active = document.querySelector(
+    `${sel}.active-ok, ${sel}.active-x, ${sel}.active-mid`);
+  return active ? active.textContent : '';
+}
+
+/* ==========================================================================
+   CANVAS — signatures and damage diagrams
+   ========================================================================== */
+function initCanvas(canvas, colour, width, bgURL){
+  if (!canvas) return;
+  const ratio = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;                        // not visible yet
+  canvas.width  = w * ratio;
+  canvas.height = h * ratio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(ratio, ratio);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = colour; ctx.lineWidth = width;
+
+  const meta = { ctx, hasInk:false, imgURL:bgURL || null, w, h, colour, width };
+  canvasMeta[canvas.id] = meta;
+
+  paintBackground(canvas.id);
+
+  let drawing = false;
+  function pos(e){
+    const r = canvas.getBoundingClientRect();
+    const p = (e.touches && e.touches[0]) ? e.touches[0] : e;
+    return { x: p.clientX - r.left, y: p.clientY - r.top };
+  }
+  function start(e){
+    e.preventDefault(); drawing = true;
+    const {x,y} = pos(e);
+    ctx.beginPath(); ctx.moveTo(x,y);
+  }
+  function move(e){
+    if (!drawing) return;
+    e.preventDefault();
+    const {x,y} = pos(e);
+    ctx.lineTo(x,y); ctx.stroke();
+    if (!meta.hasInk) {
+      meta.hasInk = true;
+      const wrap = canvas.closest('.sig-wrap');
+      if (wrap) wrap.classList.add('inked');
+    }
+  }
+  function end(e){ if (drawing) { drawing = false; ctx.closePath(); } }
+
+  canvas.addEventListener('pointerdown', start);
+  canvas.addEventListener('pointermove',  move);
+  canvas.addEventListener('pointerup',    end);
+  canvas.addEventListener('pointerleave', end);
+  canvas.addEventListener('pointercancel',end);
+}
+
+function paintBackground(canvasId){
+  const canvas = document.getElementById(canvasId);
+  const meta = canvasMeta[canvasId];
+  if (!canvas || !meta) return;
+  const { ctx, w, h, imgURL } = meta;
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.restore();
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,w,h);
+  if (!imgURL) return;
+  const img = new Image();
+  img.onload = () => {
+    const ar = img.width / img.height;
+    let dw = w, dh = w / ar;
+    if (dh > h) { dh = h; dw = h * ar; }
+    ctx.drawImage(img, (w-dw)/2, (h-dh)/2, dw, dh);
+    ctx.strokeStyle = meta.colour; ctx.lineWidth = meta.width;   // restore ink style
+  };
+  img.src = imgURL;
+}
+
+function clearCanvas(canvasId){
+  const meta = canvasMeta[canvasId];
+  if (!meta) return;
+  meta.hasInk = false;
+  const canvas = document.getElementById(canvasId);
+  const wrap = canvas && canvas.closest('.sig-wrap');
+  if (wrap) wrap.classList.remove('inked');
+  paintBackground(canvasId);
+}
+
+/* ==========================================================================
+   PHOTOS
+   ========================================================================== */
+function handlePhoto(input){
+  const key = input.dataset.assetKey;
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+  Promise.all(files.map(f => resizeImage(f, 1200, 0.82))).then(urls => {
+    photoStore[key] = photoStore[key] || [];
+    urls.forEach(u => { if (u) photoStore[key].push(u); });
+    renderPhotos(key);
+    input.value = '';                       // lets the same file be picked again
+  });
+}
+
+// Every path resolves. An unsettled promise inside Promise.all silently swallows
+// the whole batch, which is how photos "disappeared" in an earlier version.
+function resizeImage(file, maxDim, quality){
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve(null);
+    reader.onload = e => {
+      const img = new Image();
+      img.onerror = () => resolve(null);
+      img.onload = () => {
+        try {
+          let w = img.width, h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = h * maxDim / w; w = maxDim; }
+            else       { w = w * maxDim / h; h = maxDim; }
+          }
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(c.toDataURL('image/jpeg', quality));
+        } catch(_) { resolve(e.target.result); }
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderPhotos(key){
+  const grid = document.getElementById(key + '_photos');
+  if (!grid) return;
+  grid.innerHTML = (photoStore[key] || []).map((url,i) =>
+    `<div class="photo-thumb"><img src="${url}" alt="">
+       <button type="button" class="photo-del" onclick="removePhoto('${key}',${i})">×</button></div>`
+  ).join('');
+}
+
+function removePhoto(key, idx){
+  photoStore[key].splice(idx,1);
+  renderPhotos(key);
+}
+
+/* ==========================================================================
+   COLLECT + SUBMIT
+   ========================================================================== */
+function collectStrikerData(){
+  const shared = {
+    name:    val('striker_name'),
+    ee:      val('striker_ee'),
+    store:   val('striker_store'),
+    mgrName: val('striker_mgr_name'),
+    mgrCell: val('striker_mgr_cell'),
+    date:    val('striker_date') || new Date().toISOString().slice(0,10)
+  };
+
+  const assets = ASSET_ORDER.filter(k => selectedAssets.includes(k)).map(key => {
+    const asset = ASSETS[key];
+
+    const deviceFields = {};
+    asset.deviceFields.forEach(f => { deviceFields[f.id] = val(key + '_' + f.id); });
+
+    const checklist = [];
+    asset.checklist.forEach(item => {
+      if (item.section) return;
+      checklist.push({
+        id: item.id, label: item.label, opts: item.opts,
+        strikerStatus: getCLStatus(key, item.id, false)
+      });
+    });
+
+    const sigMeta = canvasMeta[key + '_sig_striker'];
+    const sigCanvas = document.getElementById(key + '_sig_striker');
+    const signature = (sigMeta && sigMeta.hasInk && sigCanvas)
+      ? sigCanvas.toDataURL('image/png') : null;
+
+    let diagrams = null;
+    if (asset.diagrams) {
+      diagrams = {};
+      asset.diagrams.forEach(view => {
+        const id = key + '_diag_' + view;
+        const m = canvasMeta[id], cv = document.getElementById(id);
+        if (m && m.hasInk && cv) diagrams[view] = cv.toDataURL('image/png');
+      });
+      if (!Object.keys(diagrams).length) diagrams = null;
+    }
+
+    return {
+      assetKey: key, deviceFields, checklist, signature, diagrams,
+      photos: photoStore[key] || [],
+      comments: val(key + '_comments')
+    };
+  });
+
+  return { v:1, type:'rbf-asset-report', created:new Date().toISOString(),
+           shared, assets };
+}
+
+async function submitStriker(){
+  if (!val('striker_name')) {
+    showBanner('form-banner','Please enter your name.','error');
+    scrollToEl('striker_name'); return;
+  }
+  const unsigned = ASSET_ORDER.filter(k => selectedAssets.includes(k)).filter(k => {
+    const m = canvasMeta[k + '_sig_striker'];
+    return !m || !m.hasInk;
+  });
+  if (unsigned.length) {
+    showBanner('form-banner',
+      `Please sign the <strong>${ASSETS[unsigned[0]].label}</strong> section before sending.`,'error');
+    scrollToEl(unsigned[0] + '_sig_striker'); return;
+  }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  showBanner('form-banner','Saving report…','ok');
+
+  try {
+    const data = collectStrikerData();
+    const id = await saveReport(data);
+    currentReportId = id;
+    document.getElementById('share-link-input').value =
+      location.origin + location.pathname + '?id=' + id;
+    hideBanner('form-banner');
+    showScreen('share-screen');
+  } catch (e) {
+    showBanner('form-banner',
+      'Could not save the report. Your answers are still here — check your connection and try again.' +
+      '<br><span style="font-size:11px;opacity:.8">' + (e && e.message ? e.message : e) + '</span>','error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Send to Manager →';
+  }
+}
+
+function copyShareLink(){
+  const input = document.getElementById('share-link-input');
+  input.select();
+  const done = () => {
+    const b = input.nextElementSibling;
+    b.textContent = 'Copied!'; setTimeout(() => b.textContent = 'Copy', 2000);
+  };
+  if (navigator.clipboard) navigator.clipboard.writeText(input.value).then(done)
+    .catch(() => { try { document.execCommand('copy'); done(); } catch(_){} });
+  else { try { document.execCommand('copy'); done(); } catch(_){} }
+}
+
+function shareViaWhatsApp(){
+  const url = document.getElementById('share-link-input').value;
+  if (navigator.share) {
+    navigator.share({ title:'Asset Condition Report', url }).catch(() => {});
+  } else {
+    window.open('https://wa.me/?text=' + encodeURIComponent(
+      'Please review and sign my Red Bull asset condition report: ' + url), '_blank');
+  }
+}
+
+function startNewReport(){
+  selectedAssets = []; photoStore = {}; canvasMeta = {};
+  reportData = null; currentReportId = null;
+  history.replaceState(null, '', location.pathname);
+  showScreen('mode-screen');
+}
+
+/* ==========================================================================
+   MANAGER — LOAD + VERIFY
+   ========================================================================== */
+async function loadReportById(id){
+  showScreen('load-screen');
+  const msg = document.getElementById('load-msg');
+  const sub = document.getElementById('load-sub');
+  const spinner = document.getElementById('load-spinner');
+  const actions = document.getElementById('load-actions');
+  actions.innerHTML = '';
+  spinner.style.display = 'block';
+  msg.textContent = 'Loading report…';
+  sub.textContent = 'Fetching your striker\u2019s report';
+
+  try {
+    const data = await fetchReport(id);
+    if (!data || data.type !== 'rbf-asset-report') throw new Error('That file is not an asset report');
+    currentReportId = id;
+    reportData = data;
+    buildManagerVerify(data);
+    showScreen('manager-verify-screen');
+  } catch (e) {
+    spinner.style.display = 'none';
+    msg.textContent = 'Report not found';
+    sub.innerHTML = 'This link may be incomplete or the report may have been removed. ' +
+      'Ask your striker to send it again.' +
+      '<br><span style="font-size:11px;opacity:.85">' + (e && e.message ? e.message : e) + '</span>';
+    actions.innerHTML =
+      '<button class="btn btn-secondary btn-full" onclick="startNewReport()">Go to home</button>';
+  }
+}
+
+function buildManagerVerify(data){
+  const c = document.getElementById('manager-verify-container');
+  const today = new Date().toISOString().slice(0,10);
+  const s = data.shared || {};
+
+  c.innerHTML = `
+    <div class="section">
+      <div class="section-title">Striker Submission</div>
+      <div class="section-sub">Review each line, record your own verification, then sign.</div>
+      <div class="readonly-group"><span class="readonly-label">Striker</span>
+        <div class="readonly-field">${esc(s.name) || '—'}${s.ee ? ' &nbsp;·&nbsp; EE ' + esc(s.ee) : ''}</div></div>
+      <div class="readonly-group"><span class="readonly-label">Store / Area</span>
+        <div class="readonly-field">${esc(s.store) || '—'}</div></div>
+      <div class="readonly-group"><span class="readonly-label">Date Submitted</span>
+        <div class="readonly-field">${esc(s.date) || '—'}</div></div>
+      <hr class="divider">
+      <div class="section-title" style="font-size:15px">Your Details</div>
+      <div class="field-group"><label>Manager Name</label>
+        <input id="mgr_name" type="text" value="${esc(s.mgrName || '')}"></div>
+      <div class="field-group"><label>EE Number</label><input id="mgr_ee" type="text"></div>
+      <div class="field-group"><label>Cell Number</label>
+        <input id="mgr_cell" type="tel" value="${esc(s.mgrCell || '')}"></div>
+      <div class="field-group"><label>Date Verified</label>
+        <input id="mgr_date" type="date" value="${today}"></div>
+    </div>`;
+
+  (data.assets || []).forEach((assetData, aIdx) => {
+    const assetDef = ASSETS[assetData.assetKey];
+    if (!assetDef) return;
+
+    const roHTML = assetDef.deviceFields.map(f => `
+      <div class="readonly-group"><span class="readonly-label">${f.label}</span>
+        <div class="readonly-field">${esc(assetData.deviceFields ? assetData.deviceFields[f.id] : '') || '—'}</div>
+      </div>`).join('');
+
+    let clHTML = '';
+    assetDef.checklist.forEach(item => {
+      if (item.section) { clHTML += `<div class="cl-section-title">${item.section}</div>`; return; }
+      const matched = (assetData.checklist || []).find(x => x.id === item.id);
+      const sv = matched ? matched.strikerStatus : '';
+      clHTML += `<div class="mgr-cl-row">
+          <div class="mgr-cl-label">${item.label}</div>
+          <div class="mgr-cl-right">
+            <span class="striker-lbl">Striker:</span>${tagFor(sv)}
+            <div class="cl-btns">${
+              item.opts.map((opt,i) =>
+                `<button type="button" class="cl-btn" data-asset="${assetData.assetKey}"
+                         data-item="${item.id}" data-mgr="1" data-idx="${i}"
+                         onclick="toggleCL(this)">${opt}</button>`).join('')
+            }</div>
+          </div>
+        </div>`;
+    });
+
+    const photosHTML = (assetData.photos && assetData.photos.length)
+      ? `<hr class="divider"><div class="block-title">Striker Photos</div>
+         <div class="photo-grid">${assetData.photos.map(u =>
+           `<div class="photo-thumb"><img src="${u}" alt=""></div>`).join('')}</div>`
+      : '';
+
+    let diagHTML = '';
+    if (assetData.diagrams) {
+      const entries = Object.entries(assetData.diagrams);
+      if (entries.length) {
+        diagHTML = `<hr class="divider"><div class="block-title">Damage Diagrams</div>` +
+          entries.map(([view,u]) => `
+            <div class="diagram-block">
+              <div class="diagram-title"><span>${DIAG_LABELS[view] || view}</span></div>
+              <img class="diag-img" src="${u}" alt="">
+            </div>`).join('');
+      }
+    }
+
+    const sigHTML = assetData.signature
+      ? `<img class="diag-img" src="${assetData.signature}" alt="">`
+      : `<div class="readonly-field">Not signed</div>`;
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-hdr"><span>${assetDef.icon}</span>${assetDef.label}</div>
+      <div class="card-body">
+        ${roHTML}
+        <hr class="divider">
+        <div class="block-title">Condition Checklist — Your Verification</div>
+        ${clHTML}
+        ${photosHTML}
+        ${diagHTML}
+        <hr class="divider">
+        ${assetData.comments
+          ? `<div class="readonly-group"><span class="readonly-label">Striker Comments</span>
+               <div class="readonly-field">${esc(assetData.comments)}</div></div>` : ''}
+        <div class="readonly-group"><span class="readonly-label">Striker Signature</span>${sigHTML}</div>
+        <div class="field-group" style="margin-top:12px"><label>Manager Comments</label>
+          <textarea id="mgr_comments_${aIdx}" rows="2"></textarea></div>
+        <div class="sig-block">
+          <div class="sig-label"><span>Your Signature</span>
+            <button type="button" class="sig-clear" onclick="clearCanvas('mgr_sig_${aIdx}')">Clear</button>
+          </div>
+          <div class="sig-wrap"><canvas id="mgr_sig_${aIdx}" class="sig-canvas"></canvas>
+            <div class="sig-placeholder">Sign here</div></div>
+        </div>
+      </div>`;
+    c.appendChild(card);
+  });
+
+  requestAnimationFrame(() => {
+    (data.assets || []).forEach((_, i) =>
+      initCanvas(document.getElementById('mgr_sig_' + i), '#111', 2.2));
+  });
+}
+
+function tagFor(v){
+  if (!v) return '<span class="tag">—</span>';
+  const cls = statusClass(v);
+  return `<span class="tag ${cls}">${esc(v)}</span>`;
+}
+function statusClass(v){
+  const pos = ['✓','OK','Good','Yes','Present','Loaded','Updated','Working'];
+  const neg = ['X','Cracked','Not Present','Missing','Not Loaded','Not updated','Poor','No','Damaged','Not Working','Bad'];
+  if (neg.some(p => v === p)) return 'tag-x';
+  if (pos.some(p => v === p)) return 'tag-ok';
+  return 'tag-mid';
+}
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+/* ==========================================================================
+   PDF
+   ========================================================================== */
+
+// jsPDF's standard fonts encode as WinAnsi (CP1252): ✓ renders as an apostrophe
+// and emoji come out as mojibake, but the CP1252 extras (– — ' ' " " … • € ™)
+// ARE supported, so don't strip those. Everything printed goes through this.
+const CP1252_EXTRA = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
+const NON_WINANSI  = new RegExp('[^\\x00-\\xFF' + CP1252_EXTRA + ']', 'g');
+
+function pdfSafe(v){
+  if (v === 0) return '0';
+  if (!v) return '—';
+  return String(v).replace(/✓/g,'OK').replace(NON_WINANSI,'?');
+}
+
+function pdfStatusColor(v){
+  if (!v) return [130,130,130];
+  const pos = ['✓','OK','Good','Yes','Present','Loaded','Updated','Working'];
+  const neg = ['X','Cracked','Not Present','Missing','Not Loaded','Not updated',
+               'Poor','No','Damaged','Not Working','Bad'];
+  if (neg.some(p => v === p)) return [198,40,40];
+  if (pos.some(p => v === p)) return [28,138,61];
+  return [230,100,0];
+}
+
+async function downloadPDF(){
+  if (!reportData) return;
+
+  const unsigned = [];
+  (reportData.assets || []).forEach((_, i) => {
+    const m = canvasMeta['mgr_sig_' + i];
+    if (!m || !m.hasInk) unsigned.push(i);
+  });
+  if (unsigned.length) {
+    showBanner('mgr-banner','Please sign every asset section before downloading the PDF.','error');
+    scrollToEl('mgr_sig_' + unsigned[0]);
+    return;
+  }
+  hideBanner('mgr-banner');
+
+  const btn = document.getElementById('pdf-btn');
+  btn.disabled = true; btn.textContent = 'Building…';
+
+  try {
+    // new Image() decodes asynchronously — naturalWidth is 0 until onload fires.
+    // Every image must be measured BEFORE drawing, or sizes come out wrong.
+    const imgCache = new Map();
+    function preloadImg(url){
+      if (!url || imgCache.has(url)) return Promise.resolve();
+      return new Promise(res => {
+        const i = new Image();
+        i.onload  = () => { imgCache.set(url, {w:i.naturalWidth, h:i.naturalHeight}); res(); };
+        i.onerror = () => { imgCache.set(url, {w:4, h:3}); res(); };
+        i.src = url;
+      });
+    }
+    const preloads = [];
+    (reportData.assets || []).forEach(a => {
+      (a.photos || []).forEach(u => preloads.push(preloadImg(u)));
+      if (a.diagrams) Object.values(a.diagrams).forEach(u => preloads.push(preloadImg(u)));
+      if (a.signature) preloads.push(preloadImg(a.signature));
+    });
+    await Promise.all(preloads);
+
+    const jsPDFCtor = window.jspdf ? window.jspdf.jsPDF : null;
+    if (!jsPDFCtor) throw new Error('PDF library not loaded');
+
+    const doc = new jsPDFCtor({ unit:'pt', format:'a4' });
+    const PW = 595, PH = 842, M = 36;
+    let y = 0, pageNum = 0;
+
+    const mgrName = val('mgr_name'), mgrEe = val('mgr_ee');
+    const mgrCell = val('mgr_cell'), mgrDate = val('mgr_date');
+    const s = reportData.shared || {};
+
+    function newPage(subtitle){
+      if (pageNum > 0) doc.addPage();
+      pageNum++;
+      doc.setFillColor(206,14,45); doc.rect(0,0,PW,52,'F');
+      doc.setFillColor(255,255,255); doc.roundedRect(M,10,28,28,3,3,'F');
+      doc.setTextColor(206,14,45); doc.setFontSize(9); doc.setFont('helvetica','bold');
+      doc.text('RB', M+14, 27, {align:'center'});
+      doc.setTextColor(255,255,255); doc.setFontSize(13); doc.setFont('helvetica','bold');
+      doc.text('Asset Condition Report — Red Bull South Africa', M+36, 23);
+      doc.setFontSize(9); doc.setFont('helvetica','normal');
+      doc.text(pdfSafe(subtitle), M+36, 38);
+      y = 68;
+    }
+    function ensureY(need){ if (y + need > PH - M - 10) newPage('(continued)'); }
+
+    const statusColor = pdfStatusColor;
+
+    function drawInfoBlock(title, pairs, acR, acG, acB){
+      const bW = PW - M*2, rowH = 28;
+      const totalH = 18 + Math.ceil(pairs.length/2) * rowH;
+      ensureY(totalH + 10);
+      doc.setDrawColor(218,218,222); doc.setLineWidth(0.5);
+      doc.rect(M, y, bW, totalH, 'S');
+      doc.setFillColor(acR,acG,acB); doc.rect(M, y, 3, totalH, 'F');
+      doc.setFillColor(248,248,250); doc.rect(M+3, y, bW-3, 18, 'F');
+      doc.setFontSize(7.5); doc.setFont('helvetica','bold'); doc.setTextColor(acR,acG,acB);
+      doc.text(title.toUpperCase(), M+10, y+12);
+      y += 18;
+      const colW = (bW-3)/2;
+      for (let i = 0; i < pairs.length; i += 2) {
+        doc.setDrawColor(235,235,238);
+        doc.line(M+3, y, M+bW, y);
+        doc.line(M+3+colW, y, M+3+colW, y+rowH);
+        doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(140,140,150);
+        doc.text(pdfSafe(pairs[i][0]).toUpperCase(), M+10, y+9);
+        doc.setFontSize(9.5); doc.setFont('helvetica','normal'); doc.setTextColor(22,22,22);
+        doc.text(pdfSafe(pairs[i][1]), M+10, y+21, {maxWidth:colW-14});
+        if (pairs[i+1]) {
+          doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(140,140,150);
+          doc.text(pdfSafe(pairs[i+1][0]).toUpperCase(), M+3+colW+7, y+9);
+          doc.setFontSize(9.5); doc.setFont('helvetica','normal'); doc.setTextColor(22,22,22);
+          doc.text(pdfSafe(pairs[i+1][1]), M+3+colW+7, y+21, {maxWidth:colW-14});
+        }
+        y += rowH;
+      }
+      y += 10;
+    }
+
+    function drawSectionTitle(title){
+      ensureY(20);
+      doc.setFillColor(235,235,238); doc.rect(M, y, PW-M*2, 16, 'F');
+      doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(70,70,75);
+      doc.text(title.toUpperCase(), M+6, y+11);
+      y += 20;
+    }
+
+    function drawChecklist(checklist){
+      const cW = PW - M*2;
+      const col1 = cW*0.50, col2 = cW*0.25, col3 = cW*0.25;
+      const rowH = 20;
+      ensureY(22);
+      doc.setFillColor(206,14,45); doc.rect(M, y, cW, 20, 'F');
+      doc.setTextColor(255,255,255); doc.setFontSize(8.5); doc.setFont('helvetica','bold');
+      doc.text('ITEM', M+6, y+13);
+      doc.text('STRIKER', M+col1+col2/2, y+13, {align:'center'});
+      doc.text('MANAGER', M+col1+col2+col3/2, y+13, {align:'center'});
+      y += 20;
+
+      function statusCell(v, cellX, cellW){
+        const cx = cellX + cellW/2;
+        if (!v) {
+          doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(190,190,195);
+          doc.text('—', cx, y+13, {align:'center'});
+          return;
+        }
+        const [r,g,b] = statusColor(v);
+        const label = pdfSafe(v);
+        doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+        const textW = doc.getTextWidth(label);
+        const pillW = Math.min(cellW-10, Math.max(34, textW + 14));
+        const pillH = 13;
+        doc.setFillColor(r,g,b);
+        doc.roundedRect(cx-pillW/2, y+rowH/2-pillH/2, pillW, pillH, 3,3,'F');
+        doc.setTextColor(255,255,255);
+        doc.text(label, cx, y+13, {align:'center'});
+      }
+
+      let rowIdx = 0;
+      checklist.forEach(item => {
+        if (item.section) {
+          ensureY(20);
+          doc.setFillColor(55,55,62); doc.rect(M, y, cW, 18, 'F');
+          doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
+          doc.text(pdfSafe(item.section).toUpperCase(), M+6, y+12);
+          y += 18; rowIdx = 0; return;
+        }
+        ensureY(rowH + 2);
+        const shade = rowIdx % 2 === 0;
+        doc.setFillColor(shade?250:255, shade?250:255, shade?253:255);
+        doc.rect(M, y, cW, rowH, 'F');
+        doc.setDrawColor(228,228,232); doc.setLineWidth(0.3);
+        doc.line(M, y+rowH, M+cW, y+rowH);
+        doc.line(M+col1, y, M+col1, y+rowH);
+        doc.line(M+col1+col2, y, M+col1+col2, y+rowH);
+        doc.setFontSize(8.5); doc.setFont('helvetica','normal'); doc.setTextColor(40,40,45);
+        doc.text(pdfSafe(item.label), M+6, y+13, {maxWidth:col1-10});
+        statusCell(item.strikerStatus || '', M+col1, col2);
+        statusCell(getCLStatus(item.assetKey, item.id, true), M+col1+col2, col3);
+        y += rowH; rowIdx++;
+      });
+      y += 8;
+    }
+
+    // Fit inside the box preserving aspect ratio, then centre. Never stretch.
+    function embedImage(dataURL, x, iy, boxW, boxH){
+      if (!dataURL) return 0;
+      const fmt = dataURL.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+      doc.setDrawColor(225,225,230); doc.setFillColor(250,250,251);
+      doc.rect(x, iy, boxW, boxH, 'FD');
+      try {
+        const dims = imgCache.get(dataURL) || {w:4, h:3};
+        const ar = (dims.w && dims.h) ? dims.w/dims.h : 4/3;
+        let dw = boxW, dh = boxW/ar;
+        if (dh > boxH) { dh = boxH; dw = boxH*ar; }
+        doc.addImage(dataURL, fmt, x + (boxW-dw)/2, iy + (boxH-dh)/2, dw, dh, undefined, 'FAST');
+      } catch(e) { console.error('embedImage:', e); }
+      return boxH;
+    }
+
+    function drawParagraph(text){
+      doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(22,22,22);
+      doc.splitTextToSize(pdfSafe(text), PW-M*2-8).forEach(line => {
+        ensureY(14); doc.text(line, M+4, y+10); y += 13;
+      });
+      y += 6;
+    }
+
+    (reportData.assets || []).forEach((assetData, aIdx) => {
+      const assetDef = ASSETS[assetData.assetKey];
+      if (!assetDef) return;
+
+      newPage(assetDef.label);            // label only — never the emoji icon
+
+      drawInfoBlock('Striker Details',
+        [['Name', s.name], ['EE Number', s.ee], ['Store / Area', s.store], ['Date', s.date]],
+        206,14,45);
+      drawInfoBlock('Manager Details',
+        [['Manager Name', mgrName], ['EE Number', mgrEe],
+         ['Cell Number', mgrCell], ['Date Verified', mgrDate]],
+        55,55,62);
+      drawInfoBlock('Device Details',
+        assetDef.deviceFields.map(f => [f.label,
+          assetData.deviceFields ? assetData.deviceFields[f.id] : '']),
+        206,14,45);
+
+      y += 4;
+      const clWithKey = assetDef.checklist.map(item => item.section ? item : Object.assign({}, item, {
+        strikerStatus: ((assetData.checklist || []).find(c => c.id === item.id) || {}).strikerStatus || '',
+        assetKey: assetData.assetKey
+      }));
+      drawChecklist(clWithKey);
+
+      if (assetData.photos && assetData.photos.length) {
+        drawSectionTitle('Photos');
+        const photoW = (PW - M*2 - 8)/2, photoBoxH = 160;
+        assetData.photos.forEach((ph, pi) => {
+          if (pi % 2 === 0) ensureY(photoBoxH + 10);
+          const px = M + (pi%2)*(photoW+8);
+          const h = embedImage(ph, px, y, photoW, photoBoxH);
+          if (pi % 2 === 1 || pi === assetData.photos.length-1) y += (h||photoBoxH) + 8;
+        });
+        y += 4;
+      }
+
+      if (assetData.diagrams) {
+        const entries = Object.entries(assetData.diagrams);
+        if (entries.length) {
+          drawSectionTitle('Damage Diagrams');
+          const diagW = (PW - M*2 - 8)/2, diagBoxH = 120;
+          y += 4;                                     // clear the section bar
+          entries.forEach(([view, url], di) => {
+            if (di % 2 === 0) ensureY(diagBoxH + 34);
+            const dx = M + (di%2)*(diagW+8);
+            doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(80,80,80);
+            doc.text(pdfSafe(DIAG_LABELS[view] || view).toUpperCase(), dx, y+8);
+            const dh = embedImage(url, dx, y+12, diagW, diagBoxH);
+            if (di % 2 === 1 || di === entries.length-1) y += (dh||diagBoxH) + 26;
+          });
+        }
+      }
+
+      if (assetData.comments) { drawSectionTitle('Striker Comments'); drawParagraph(assetData.comments); }
+      const mgrComments = val('mgr_comments_' + aIdx);
+      if (mgrComments) { drawSectionTitle('Manager Comments'); drawParagraph(mgrComments); }
+
+      // Signature block needs ~145pt; guard with the real figure so it doesn't overflow.
+      ensureY(145);
+      drawSectionTitle('Signatures');
+      const sigW = (PW - M*2 - 12)/2, sigH = 76;
+      doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(80,80,80);
+      doc.text('STRIKER', M, y);
+      doc.text('MANAGER / RFM', M+sigW+12, y);
+      y += 4;
+      doc.setDrawColor(200,200,200); doc.setLineWidth(0.5);
+      doc.rect(M, y, sigW, sigH); doc.rect(M+sigW+12, y, sigW, sigH);
+
+      if (assetData.signature) {
+        try { doc.addImage(assetData.signature, 'PNG', M+2, y+2, sigW-4, sigH-4, undefined, 'FAST'); } catch(_){}
+      } else {
+        doc.setFontSize(8); doc.setFont('helvetica','italic'); doc.setTextColor(150,150,150);
+        doc.text('Not signed', M+sigW/2, y+sigH/2, {align:'center'});
+      }
+      const mgrCanvas = document.getElementById('mgr_sig_' + aIdx);
+      if (mgrCanvas) {
+        try { doc.addImage(mgrCanvas.toDataURL('image/png'), 'PNG',
+                           M+sigW+14, y+2, sigW-4, sigH-4, undefined, 'FAST'); } catch(_){}
+      }
+      y += sigH + 8;
+      doc.setDrawColor(180,180,180); doc.setLineWidth(0.5);
+      doc.line(M, y, M+sigW, y);
+      doc.line(M+sigW+12, y, M+sigW*2+12, y);
+      doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
+      doc.text(pdfSafe(s.name || 'Striker Name'), M, y+10);
+      doc.text(pdfSafe(mgrName || 'Manager Name'), M+sigW+12, y+10);
+      y += 16;
+    });
+
+    const store = (s.store || 'unknown').replace(/[^a-zA-Z0-9]+/g,'_');
+    const dt    = (s.date || new Date().toISOString().slice(0,10)).replace(/-/g,'');
+    const fname = `RBF_Asset_Report_${store}_${dt}.pdf`;
+
+    // doc.save() on iOS just opens the PDF in the viewer with no way to keep it.
+    // A blob + the share sheet gives Save to Files / WhatsApp / Mail / AirDrop.
+    const pdfBlob = doc.output('blob');
+    const pdfFile = new File([pdfBlob], fname, { type:'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files:[pdfFile] })) {
+      navigator.share({ title:'Red Bull Asset Report', files:[pdfFile] }).catch(() => {});
+    } else {
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fname;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+  } catch (e) {
+    showBanner('mgr-banner','Could not build the PDF: ' + (e && e.message ? e.message : e), 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Download PDF';
+  }
+}
+
+/* ==========================================================================
+   BOOT
+   ========================================================================== */
+document.addEventListener('DOMContentLoaded', () => {
+  dbReady = initDb();
+  const id = new URLSearchParams(location.search).get('id');
+  if (id) loadReportById(id);          // manager arriving on a share link
+  else    showScreen('mode-screen');
+});
+</script>
+</body>
+</html>
