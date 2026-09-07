@@ -548,20 +548,37 @@ function configWarn(msg){
   if (el) { el.textContent = msg; el.style.display = 'block'; }
 }
 
+function newId(){
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  const b = new Uint8Array(16);
+  (window.crypto || {}).getRandomValues
+    ? crypto.getRandomValues(b)
+    : b.forEach((_,i) => b[i] = Math.floor(Math.random()*256));
+  b[6] = (b[6] & 0x0f) | 0x40;            // version 4
+  b[8] = (b[8] & 0x3f) | 0x80;            // variant 1
+  const h = [...b].map(x => x.toString(16).padStart(2,'0')).join('');
+  return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
+}
+
+// The id is generated here rather than by the database, deliberately: asking
+// Postgres to return the generated id needs INSERT ... RETURNING, and RETURNING
+// requires a SELECT policy — which this table doesn't have, precisely so the
+// public key can't be used to list everyone's reports. Generating it client-side
+// keeps the insert write-only.
 async function saveReport(data){
   if (!db) throw new Error('Not connected to the database');
-  const { data: row, error } = await db
+  const id = newId();
+  const { error } = await db
     .from('asset_reports')
     .insert({
+      id:           id,
       striker_name: data.shared.name,
       store:        data.shared.store,
       status:       'pending',
       report_data:  data
-    })
-    .select('id')
-    .single();
+    });
   if (error) throw new Error(error.message || 'Insert failed');
-  return row.id;
+  return id;
 }
 
 // Read goes through a security-definer function, not a bare select, so that the
